@@ -1,7 +1,10 @@
 package br.com.pokedex_waffle;
 
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.widget.GridLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -19,37 +22,72 @@ public class MainActivity extends AppCompatActivity {
 
     private Retrofit retrofit;
     private static final String TAG = "POKEDEX";
+    private RecyclerView recyclerView;
+    private ListaPokemonAdapter listaPokemonAdapter;
+
+    private int offset;
+    private boolean aptoCarregar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        recyclerView = findViewById(R.id.recyclerView);
+        listaPokemonAdapter = new ListaPokemonAdapter(this);
+        recyclerView.setAdapter(listaPokemonAdapter);
+        recyclerView.setHasFixedSize(true);
+        final GridLayoutManager layoutManager = new GridLayoutManager(this, 3 );
+        recyclerView.setLayoutManager(layoutManager);
+        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+
+                if(dy > 0){
+                    int visibleItemCount = layoutManager.getChildCount();
+                    int totalItemCount = layoutManager.getItemCount();
+                    int pastVisibleItems = layoutManager.findFirstVisibleItemPosition();
+
+                    if(aptoCarregar){
+                        if((visibleItemCount + pastVisibleItems) >= totalItemCount){
+                            Log.i(TAG, "Chegamos ao final.");
+
+                            aptoCarregar = false;
+                            offset += 20;
+                            obterDados(offset);
+                        }
+                    }
+                }
+            }
+        });
+
         retrofit = new Retrofit.Builder()
                 .baseUrl("https://pokeapi.co/api/v2/")
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
 
-        obterDados();
+        aptoCarregar = true;
+        offset = 0;
+        obterDados(offset);
     }
 
-    private void obterDados(){
+    private void obterDados(int offset){
         PokeapiService service = retrofit.create(PokeapiService.class);
-        Call<PokemonResponse> pokemonResponseCall = service.obterListaPokemon();
+        Call<PokemonResponse> pokemonResponseCall = service.obterListaPokemon(20, offset);
 
         pokemonResponseCall.enqueue(new Callback<PokemonResponse>() {
             @Override
             public void onResponse(Call<PokemonResponse> call, Response<PokemonResponse> response) {
+                aptoCarregar = true;
                 if(response.isSuccessful()){
                     PokemonResponse pokemonResponse = response.body();
                     ArrayList<Pokemon> listaPokemon = pokemonResponse.getResults();
 
                     Log.i(TAG, "Contagem: " + pokemonResponse.getCount());
 
-                    for (int i = 0; i< listaPokemon.size(); i++){
-                        Pokemon p = listaPokemon.get(i);
-                        Log.i(TAG, "Pokemon: " + p.getNome());
-                    }
+                    listaPokemonAdapter.adicionarListaPokemon(listaPokemon);
+
                 }else{
                     Log.e(TAG, " onResponse: "+ response.errorBody());
                 }
@@ -57,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onFailure(Call<PokemonResponse> call, Throwable t) {
+                aptoCarregar = true;
                 Log.e(TAG, " onFailure: " + t.getMessage());
             }
         });
